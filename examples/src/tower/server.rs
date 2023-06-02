@@ -1,13 +1,28 @@
 use hyper::Body;
 use std::{
+    future::Future,
     task::{Context, Poll},
     time::Duration,
 };
 use tonic::{body::BoxBody, transport::Server, Request, Response, Status};
 use tower::{Layer, Service};
 
+use glommio;
 use hello_world::greeter_server::{Greeter, GreeterServer};
 use hello_world::{HelloReply, HelloRequest};
+
+#[derive(Copy, Clone)]
+struct GlommioExec;
+
+impl<Fut> hyper::rt::Executor<Fut> for GlommioExec
+where
+    Fut: Future + Send + 'static,
+    Fut::Output: Send + 'static,
+{
+    fn execute(&self, fut: Fut) {
+        glommio::spawn_local(fut).detach();
+    }
+}
 
 pub mod hello_world {
     tonic::include_proto!("helloworld");
@@ -18,6 +33,23 @@ pub struct MyGreeter {}
 
 #[tonic::async_trait]
 impl Greeter for MyGreeter {
+    async fn say_hello(
+        &self,
+        request: Request<HelloRequest>,
+    ) -> Result<Response<HelloReply>, Status> {
+        println!("Got a request from {:?}", request.remote_addr());
+
+        let reply = hello_world::HelloReply {
+            message: format!("Hello {}!", request.into_inner().name),
+        };
+        Ok(Response::new(reply))
+    }
+}
+
+struct Gter;
+
+#[tonic::async_trait]
+impl Greeter for Gter {
     async fn say_hello(
         &self,
         request: Request<HelloRequest>,
@@ -51,6 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .into_inner();
 
     Server::builder()
+        .executor(GlommioExec)
         // Wrap all services in the middleware stack
         .layer(layer)
         .add_service(svc)

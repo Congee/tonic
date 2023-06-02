@@ -37,7 +37,7 @@ fn match_for_io_error(err_status: &Status) -> Option<&std::io::Error> {
 }
 
 #[derive(Debug)]
-pub struct EchoServer {}
+pub struct EchoServer(std::sync::Arc<i32>);
 
 #[tonic::async_trait]
 impl pb::echo_server::Echo for EchoServer {
@@ -144,7 +144,7 @@ impl pb::echo_server::Echo for EchoServer {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let server = EchoServer {};
+    let server = EchoServer(std::sync::Arc::new(3));
     Server::builder()
         .add_service(pb::echo_server::EchoServer::new(server))
         .serve("[::1]:50051".to_socket_addrs().unwrap().next().unwrap())

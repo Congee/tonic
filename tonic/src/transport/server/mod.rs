@@ -34,6 +34,7 @@ use crate::transport::Error;
 
 use self::recover_error::RecoverError;
 use super::service::{GrpcTimeout, ServerIo};
+use super::service::executor::{Executor, SharedExec};
 use crate::body::BoxBody;
 use bytes::Bytes;
 use futures_core::Stream;
@@ -94,6 +95,7 @@ pub struct Server<L = Identity> {
     max_frame_size: Option<u32>,
     accept_http1: bool,
     service_builder: ServiceBuilder<L>,
+    executor: SharedExec,
 }
 
 impl Default for Server<Identity> {
@@ -115,6 +117,7 @@ impl Default for Server<Identity> {
             max_frame_size: None,
             accept_http1: false,
             service_builder: Default::default(),
+            executor: SharedExec::tokio(),
         }
     }
 }
@@ -150,6 +153,18 @@ impl<L> Server<L> {
             tls: Some(tls_config.tls_acceptor().map_err(Error::from_source)?),
             ..self
         })
+    }
+
+    /// Sets the executor used to spawn async tasks.
+    ///
+    /// Uses `tokio::spawn` by default.
+    #[must_use]
+    pub fn executor<E>(mut self, executor: E) -> Self
+    where
+        E: Executor<Pin<Box<dyn Future<Output = ()> + Send>>> + Send + Sync + 'static,
+    {
+        self.executor = SharedExec::new(executor);
+        self
     }
 
     /// Set the concurrency limit applied to on requests inbound per connection.
@@ -455,6 +470,7 @@ impl<L> Server<L> {
             http2_adaptive_window: self.http2_adaptive_window,
             max_frame_size: self.max_frame_size,
             accept_http1: self.accept_http1,
+            executor: self.executor,
         }
     }
 
